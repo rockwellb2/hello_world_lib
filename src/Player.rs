@@ -3,7 +3,7 @@ use gdnative::api::{KinematicBody, CollisionShape, MeshInstance, Camera};
 //use gdnative::api::*;
 use gdnative::prelude::*;
 use crate::player::JumpStage::{LATER_JUMP, INITIAL_JUMP, NO_JUMP};
-use crate::fsm::State;
+/*use crate::fsm::State;
 
 struct GroundState<'a> {
     name: String,
@@ -32,7 +32,7 @@ impl State for GroundState<'_> {
 
 
     }
-}
+}*/
 
 /// The player "class"
 #[derive(NativeClass)]
