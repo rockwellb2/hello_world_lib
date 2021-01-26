@@ -55,11 +55,14 @@ pub struct Player {
 }
 
 const SPEED: f32 = 25.0;
-const ACCEL: f32 = 2.0;
+const ACCEL: f32 = 0.5;
+const DECEL: f32 = 1.0;
 const AIR_SPEED: f32 = 25.0;
+const AIR_ACCEL: f32 = 0.1;
 const GRAV: f32 = 200.0;
 const JUMP_GRAV: f32 = 100.0;
 const JUMP: f32 = 50.0;
+const WALL_SLIDE: f32 = 70.0;
 const SHORT_JUMP_TIME: f64 = 0.1;
 const FULL_JUMP_TIME: f64 = 0.5;
 //const GRAV: Vector3 = Vector3::new(0.0,-1.0,0.0) * 20.0;
@@ -369,30 +372,62 @@ impl Player {
         // Get Input singleton
         let input = Input::godot_singleton();
 
-        let speed = match self.player_state {
-            GroundState => {SPEED}
+        let accel = match self.player_state {
+            GroundState => {ACCEL}
             AirState => {AIR_SPEED}
             WallState => {AIR_SPEED}
         };
+        
+        let mut accel_vec: Vector3 = Vector3::zero();
 
         //godot_print!("Does this work?");
-
-        self.velo_xz = Vector3::zero();
-
         if Input::is_action_pressed(input, "ui_right") {
-            self.velo_xz += cam_trans.basis.x() * 100.0;
+            accel_vec += cam_trans.basis.x() * 100.0;
         }
         if Input::is_action_pressed(input, "ui_left") {
-            self.velo_xz -= cam_trans.basis.x() * 100.0;
+            accel_vec -= cam_trans.basis.x() * 100.0;
         }
         if Input::is_action_pressed(input, "ui_down") {
-            self.velo_xz += cam_trans.basis.z() * 100.0;
+            accel_vec += cam_trans.basis.z() * 100.0;
         }
         if Input::is_action_pressed(input, "ui_up") {
-            self.velo_xz -= cam_trans.basis.z() * 100.0;
+            accel_vec -= cam_trans.basis.z() * 100.0;
         }
 
-        self.velo_xz = self.velo_xz.with_max_length(speed);
+        if self.wall_jump_inputs(owner, accel_vec) {
+            return
+        }
+        
+        if accel_vec.length() == 0.0 && self.player_state == GroundState {
+            let signx: f32 = 1.0_f32.copysign(self.velo_xz.x);
+            let signz: f32 = 1.0_f32.copysign(self.velo_xz.z);
+
+            accel_vec.x -= signx * DECEL;
+            accel_vec.z -= signz * DECEL;
+            accel_vec.y = 0.0;
+
+            accel_vec.with_min_length(DECEL);
+
+            self.velo_xz += accel_vec;
+
+            if signx.is_sign_positive() ^ self.velo_xz.x.is_sign_positive() {
+                self.velo_xz.x = 0.0;
+            }
+
+            if signz.is_sign_positive() ^ self.velo_xz.z.is_sign_positive() {
+                self.velo_xz.z = 0.0;
+            }
+
+        }
+
+
+        else {
+            accel_vec.with_max_length(ACCEL);
+
+            self.velo_xz += accel_vec;
+        }
+
+        self.velo_xz = self.velo_xz.with_max_length(SPEED);
         self.velo_xz.y = 0.0;
     }
 
@@ -491,6 +526,7 @@ impl Player {
 
 
 
+
         /*if (self.jump == InitialJump) || (self.jump_held && self.jump == LaterJump) {
             self.velocity.y = JUMP;
         }
@@ -500,6 +536,40 @@ impl Player {
         }*/
 
 
+    }
+
+    fn wall_jump_inputs(&mut self, owner: &KinematicBody, vec: Vector3) -> bool {
+        let mut output: bool = false;
+
+        if self.player_state == WallState {
+            output = true;
+        }
+
+        else if owner.is_on_wall() && self.player_state == AirState {
+            let kc = owner.get_slide_collision(0);
+
+            // makes sure the collision exists
+            let collision = match kc {
+                Some(x) => x,
+                None => panic!(),
+            };
+
+            //gets normal of the collision
+            let normal: Vector3 = unsafe { collision.assume_safe().normal() };
+
+            let x_check: bool = !(normal.x.signum() == vec.x.signum()) || vec.x == 0.0;
+            let z_check: bool = !(normal.z.signum() == vec.z.signum()) || vec.z == 0.0;
+
+            if x_check || z_check {
+                self.player_state = WallState;
+                output = true;
+
+                //godot_print!("WALL!!");
+            }
+
+        }
+
+        output
     }
 
     // Timer signal that signifies end of regular jump
