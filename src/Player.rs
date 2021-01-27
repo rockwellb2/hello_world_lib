@@ -55,7 +55,10 @@ pub struct Player {
 }
 
 const SPEED: f32 = 25.0;
-const ACCEL: f32 = 2.0;
+const ACCEL: f32 = 200.0;
+const DECEL: f32 = 50.0;
+const AIR_DECEL: f32 = 50.0;
+const AIR_ACCEL: f32 = 70.0;
 const AIR_SPEED: f32 = 25.0;
 const GRAV: f32 = 200.0;
 const JUMP_GRAV: f32 = 100.0;
@@ -239,7 +242,7 @@ impl Player {
         //let input = Input::godot_singleton();
 
         // Get movement inputs to set velocity, and handle jump actions
-        self.move_input(owner);
+        self.move_input(owner, delta);
         self.handle_jump(owner, delta);
 
         self.velocity.x = self.velo_xz.x;
@@ -360,7 +363,7 @@ impl Player {
 
     // Method to get movement Inputs
     #[export]
-    fn move_input(&mut self, owner: &KinematicBody) {
+    fn move_input(&mut self, owner: &KinematicBody, delta: f32) {
         // Get PlayCamera and its global transform
         let cam = unsafe {self.cam.assume_safe()};
         let cam = cam.cast::<Camera>().unwrap();
@@ -375,24 +378,48 @@ impl Player {
             WallState => {AIR_SPEED}
         };
 
+        let accel = match self.player_state {
+            GroundState => {ACCEL}
+            AirState => {AIR_ACCEL}
+            WallState => {AIR_ACCEL}
+        };
+
+        let decel = match self.player_state {
+            GroundState => {DECEL}
+            AirState => {AIR_DECEL}
+            WallState => {AIR_DECEL}
+        };
+
+
         //godot_print!("Does this work?");
 
-        self.velo_xz = Vector3::zero();
+        let mut input_v: Vector3 = Vector3::zero();
 
         if Input::is_action_pressed(input, "ui_right") {
-            self.velo_xz += cam_trans.basis.x() * 100.0;
+            input_v += cam_trans.basis.x() * 100.0;
         }
         if Input::is_action_pressed(input, "ui_left") {
-            self.velo_xz -= cam_trans.basis.x() * 100.0;
+            input_v -= cam_trans.basis.x() * 100.0;
         }
         if Input::is_action_pressed(input, "ui_down") {
-            self.velo_xz += cam_trans.basis.z() * 100.0;
+            input_v += cam_trans.basis.z() * 100.0;
         }
         if Input::is_action_pressed(input, "ui_up") {
-            self.velo_xz -= cam_trans.basis.z() * 100.0;
+            input_v -= cam_trans.basis.z() * 100.0;
         }
 
-        self.velo_xz = self.velo_xz.with_max_length(speed);
+        let new_input_v = input_v.normalize();
+
+
+
+        if input_v != Vector3::zero() {
+            self.velo_xz = self.move_toward(self.velo_xz, new_input_v * speed, accel * delta);
+        }
+        else  {
+            self.velo_xz = self.move_toward(self.velo_xz, Vector3::zero(), decel * delta);
+        }
+
+        //self.velo_xz = self.velo_xz.with_max_length(speed);
         self.velo_xz.y = 0.0;
     }
 
@@ -514,6 +541,17 @@ impl Player {
     #[export]
     fn _on_end_timer_timeout(&mut self, owner: &KinematicBody) {
         self.jump = NoJump;
+    }
+
+    fn move_toward(&self, v: Vector3, p_to: Vector3, p_delta: f32) -> Vector3 {
+        let vd: Vector3 = p_to - v;
+        let len: f32 = vd.length();
+        if len <=  p_delta || len < 0.00001 {
+            p_to
+        }
+        else {
+            v + vd / len * p_delta
+        }
     }
 
 }
